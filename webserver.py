@@ -1,11 +1,10 @@
 from flask import Flask, render_template, request, session, jsonify
 from flask_cors import CORS
 #import rclpy
-import queue
 import secrets
 
 app = Flask(__name__)
-app.secret_key = secrets.token_urlsafe(32)
+app.secret_key = secrets.token_hex(32)
 # enable CORS
 CORS(app, resources={r'/*': {'origins': '*'}})
 # class ROSNode(Node):
@@ -22,16 +21,24 @@ CORS(app, resources={r'/*': {'origins': '*'}})
 def hello():
     return render_template('index.html')
 
-
+def defineRobotLocation(location):
+    robotLocation = 0
+    if "V&V" in location:
+        robotLocation = 1
+    elif 'Demo' in location:
+        robotLocation = 2
+    elif 'Cafeteria' in location:
+        robotLocation = 3
+    return robotLocation
 def sendDataToROS(location):
     # label based on recieve
-    # 1, 2, 3
+
     # int or xyz or string, 
     # from the payload get data
     # # ROS Communication
     # rclpy.init()
     # node = ROSNode()
-    # node.publish_message(location)
+    # node.publish_message(robotLocation)
     # rclpy.shutdown()
     print("Data sent to ROS\n")
     return
@@ -47,8 +54,8 @@ def requestReceived():
         'item': itemToSend
     }
     if 'locations_list' not in session:
-        session['locations_list'] = list()  # Create a new queue if it doesn't exist in the session
-    session['locations_list'].insert(0, endLocation)  # Add the end location to the queue
+        session['locations_list'] = []  # Create a new list if it doesn't exist in the session
+    session['locations_list'].append(endLocation)  # Add the end location to the queue
     # add vue to the route and then route to the html file that has the progress bar
     # connect this with a jinja template that is the same as the vue template
     print('Request received successfully')
@@ -59,21 +66,22 @@ def requestReceived():
 # worst case scenario, hard code it
 @app.route('/send', methods=['POST'])
 def returnButtonPushed():
+    print(session)
     data = {'locationSent': False}
     location = 'None'
-    if 'locations_list' in session:
-        locations_list = session['locations_list']
+    if 'location_list' in session:
+        locations_list = session.get('locations_list', [])
         print(locations_list)
-        if len(locations_list) > 0:
-            location = locations_list[0]  # Retrieve the location from the queue
-            data['location'] = True
-            # remove location from location list and send it to ROS
-            locations_list.pop(0)
-            sendDataToROS(location)
-        else:
-            print('No locations available to send to robot')
+        location = locations_list[0] if locations_list else None   # Retrieve the location from the queue
+        data['location'] = True
+        # remove location from location list and send it to ROS
+        locations_list.pop(0)
+        sendDataToROS(location)
+        print(f'Sent data succesfully {location}')
+        session.modified = False
     else:
         print('No locations available to send to robot')
+    print(request.cookies.get('session'))
     return jsonify(data)
 
 # create an axios requests that sends data to progress bar via a get request
