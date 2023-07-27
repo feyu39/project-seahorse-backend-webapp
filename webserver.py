@@ -1,12 +1,21 @@
 from flask import Flask, render_template, request, session, jsonify
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
+from flask_session import Session
 #import rclpy
 import secrets
 
 app = Flask(__name__)
+app.config["SESSION_PERMANENT"] = False
+app.config["SESSION_TYPE"] = "filesystem"
+app.config.update(
+    SESSION_COOKIE_SAMESITE='Lax'
+)
 app.secret_key = secrets.token_hex(32)
+
 # enable CORS
-CORS(app, resources={r'/*': {'origins': '*'}})
+Session(app)
+CORS(app)
+
 # class ROSNode(Node):
 #     def __init__(self):
 #         super().__init__('flask_ros_node')
@@ -30,6 +39,7 @@ def defineRobotLocation(location):
     elif 'Cafeteria' in location:
         robotLocation = 3
     return robotLocation
+
 def sendDataToROS(location):
     # label based on recieve
 
@@ -43,28 +53,42 @@ def sendDataToROS(location):
     print("Data sent to ROS\n")
     return
 
-@app.route('/request', methods=['POST'])
+@app.route('/request', methods=['POST', 'OPTIONS'])
+@cross_origin(supports_credentials=True)
 def requestReceived():
-    startLocation = request.json.get('start_location')
-    endLocation = request.json.get('end_location')
-    itemToSend = request.json.get('item')
-    sendDataToROS(startLocation)
-    print(f'Sent location data to ROS: {startLocation}')
-    data = {
-        'item': itemToSend
-    }
-    if 'locations_list' not in session:
-        session['locations_list'] = []  # Create a new list if it doesn't exist in the session
-    session['locations_list'].append(endLocation)  # Add the end location to the queue
-    # add vue to the route and then route to the html file that has the progress bar
-    # connect this with a jinja template that is the same as the vue template
-    print('Request received successfully')
-    print(session['locations_list'])
-    return jsonify(data)
+    # if request.method == 'OPTIONS':
+    #     # Preflight request. Reply successfully:
+    #     resp = app.make_default_options_response()
+
+    #     # Allow CORS on this route:
+    #     headers = resp.headers
+    #     headers['Access-Control-Allow-Origin'] = '*'
+    #     headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
+    #     headers['Access-Control-Allow-Methods'] = 'GET, POST'
+
+    #     return resp
+    if request.method == 'POST':
+        startLocation = request.json.get('start_location')
+        endLocation = request.json.get('end_location')
+        itemToSend = request.json.get('item')
+        sendDataToROS(startLocation)
+        print(f'Sent location data to ROS: {startLocation}')
+        data = {
+            'item': itemToSend
+        }
+        if 'locations_list' not in session:
+            session['locations_list'] = []  # Create a new list if it doesn't exist in the session
+        session['locations_list'].append(endLocation)  # Add the end location to the queue
+        # add vue to the route and then route to the html file that has the progress bar
+        # connect this with a jinja template that is the same as the vue template
+        print('Request received successfully')
+        print(session['locations_list'])
+        return jsonify(data)
 
 # create an axios request that sends this information to the backend server
 # worst case scenario, hard code it
 @app.route('/send', methods=['POST'])
+@cross_origin(supports_credentials=True)
 def returnButtonPushed():
     print(session)
     data = {'locationSent': False}
@@ -81,7 +105,13 @@ def returnButtonPushed():
         session.modified = False
     else:
         print('No locations available to send to robot')
-    print(request.cookies.get('session'))
+    print(session)
     return jsonify(data)
 
 # create an axios requests that sends data to progress bar via a get request
+# best way is to grab from the robot, for now it is hardcoded
+@app.route('/location', methods=['GET'])
+def sendLocationStatus():
+    data = {'location': 1}
+    # make a call to robot to get it's current location
+    return jsonify(data)
