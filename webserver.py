@@ -4,10 +4,11 @@ from flask_cors import CORS, cross_origin
 # from flask_session import Session
 from collections import deque # used for queuing tasks
 
-# from rclpy.node import Node
-# import rclpy
-# from std_msgs.msg import Int32
+from rclpy.node import Node
+import rclpy
+from std_msgs.msg import Int32
 import secrets
+import signal
 
 
 # settings for sessions
@@ -24,31 +25,18 @@ app.secret_key = secrets.token_hex(32)
 CORS(app)
 
 # for ROS - comment out unless working on robot computer
-# class ROSNode(Node):
-#     def __init__(self):
-#         super().__init__('ROS_node')
-#         self.publisher = self.create_publisher(Int32, 'topic', 10)
-# # setup a rate to send messages sync the hz between the sent and the rates
-#     def send_int_location(self, location):
-#         msg = Int32()
-#         msg.data = location
-#         self.publisher.publish(msg)
-#         self.get_logger().info(f"Location sent to ROS {msg}")
-
-# def ros_spin(node):
-#     rclpy.spin(node)
-
-# def main(args=None):
-#     rclpy.init(args=args)
-#     global Node
-#     node = ROSNode()
-#     t = threading.Thread(target=ros_spin, args=(node,))
-#     t.start()
-#     app.run(debug=True)
-
-@app.route('/')
-def hello():
-    return render_template('index.html')
+class ROSNode(Node):
+    def __init__(self):
+        super().__init__('AppRequestNode')
+        self.publisher = self.create_publisher(Int32, 'app_request_topic', 10)
+        
+# setup a rate to send messages sync the hz between the sent and the rates
+    def send_int_location(self, location):
+        msg = Int32()
+        msg.data = location
+        self.get_logger().info(f"Sending Loc to ROS {msg}")
+        self.publisher.publish(msg)
+        self.get_logger().info(f"Location sent to ROS {msg}")
 
 def defineRobotLocation(location):
     robotLocation = 0
@@ -60,18 +48,33 @@ def defineRobotLocation(location):
         robotLocation = 3
     return robotLocation
 
-def sendDataToROS(location):
-    # label based on recieve
-    # int or xyz or string, 
-    # from the payload get data
-    # ROS Communication
-    # rclpy.init()
-    # node = ROSNode()
-    # robotLocation = defineRobotLocation(location)
-    # node.publish_message(robotLocation)
-    # rclpy.shutdown()
-    print("Data sent to ROS\n")
-    return
+def ros_spin(node):
+    rclpy.spin(node)
+
+def sigint_handler(signal, frame):
+    """
+    SIGINT handler
+
+    We have to know when to tell rclpy to shut down, because
+    it's in a child thread which would stall the main thread
+    shutdown sequence. So we use this handler to call
+    rclpy.shutdown() and then call the previously-installed
+    SIGINT handler for Flask
+    """
+    rclpy.shutdown()
+    if prev_sigint_handler is not None:
+        prev_sigint_handler(signal)
+
+rclpy.init(args=None)
+app_node = ROSNode()
+t = threading.Thread(target=ros_spin, args=(app_node,))
+t.start()
+prev_sigint_handler = signal.signal(signal.SIGINT, sigint_handler)
+# app.run(debug=True)
+
+@app.route('/')
+def hello():
+    return render_template('index.html')
 
 # data store - used instead of session because it is not working
 data_store_locations = deque()
@@ -86,7 +89,8 @@ def requestReceived():
         itemToSend = request.json.get('item')
 
         print(request.json)
-        sendDataToROS(startLocation)
+
+        app_node.send_int_location(defineRobotLocation(startLocation))
 
         data = {
             'item': itemToSend
@@ -118,7 +122,7 @@ def returnButtonPushed():
     #     print(f'Sent data succesfully {location}')
     if len(data_store_locations) > 0:
         location = data_store_locations.popleft()
-        sendDataToROS(location)
+        app_node.send_int_location(defineRobotLocation(location))
         data['location'] = True
         print(f'Sent data succesfully {location}')
     else:
@@ -144,7 +148,5 @@ def sendLocationStatus():
 def getItem():
     # grab item from the store if it exists, otherwise return nothing
     item = 'None' if (len(data_store_items) == 0) else data_store_items.pop()
-    print(item)
     itemJson = {'item': item}
     return jsonify(itemJson)
-
