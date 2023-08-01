@@ -6,7 +6,7 @@ from collections import deque # used for queuing tasks
 
 from rclpy.node import Node
 import rclpy
-from std_msgs.msg import Int32
+from std_msgs.msg import Int32, String
 import secrets
 import signal
 
@@ -28,7 +28,9 @@ CORS(app)
 class ROSNode(Node):
     def __init__(self):
         super().__init__('AppRequestNode')
-        self.publisher = self.create_publisher(Int32, 'app_request_topic', 10)
+        self.publisher = self.create_publisher(Int32, 'app_request', 10)
+        self.subscriber = self.create_subscription(Int32, 'robot_status',self.robot_complete_callback, 10)
+        self.robot_complete_msg = Int32()
         
 # setup a rate to send messages sync the hz between the sent and the rates
     def send_int_location(self, location):
@@ -37,6 +39,13 @@ class ROSNode(Node):
         self.get_logger().info(f"Sending Loc to ROS {msg}")
         self.publisher.publish(msg)
         self.get_logger().info(f"Location sent to ROS {msg}")
+
+    def robot_complete_callback(self, msg):
+        self.robot_complete_msg.data = msg.data
+        print(f'Robot message received: {msg.data}')
+
+
+
 
 def defineRobotLocation(location):
     robotLocation = 0
